@@ -1,0 +1,44 @@
+{
+  "name": "cfguard",
+  "version": "0.1.0",
+  "description": "Real-time cost circuit breaker for Cloudflare Workers: meters D1/KV/R2/Durable Objects usage in-process and stops runaway bills within seconds.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "keywords": [
+    "cloudflare",
+    "workers",
+    "d1",
+    "durable-objects",
+    "billing",
+    "circuit-breaker",
+    "cost"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "dev:example": "wrangler dev -c example/wrangler.jsonc"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.3.7",
+    "@cloudflare/workers-types": "^5.20261007.1",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.148.0"
+  }
+}

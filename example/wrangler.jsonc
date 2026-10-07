@@ -1,0 +1,29 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "cfguard-example",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "d1_databases": [
+    // Replace database_id with the id from `wrangler d1 create cfguard-example` before deploying.
+    { "binding": "DB", "database_name": "cfguard-example", "database_id": "00000000-0000-0000-0000-000000000000" }
+  ],
+  "kv_namespaces": [{ "binding": "CACHE", "id": "00000000000000000000000000000000" }],
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "cfguard-example" }],
+  "queues": {
+    "producers": [{ "binding": "JOBS", "queue": "cfguard-jobs" }],
+    "consumers": [{ "queue": "cfguard-jobs", "max_retries": 3 }]
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "CFGUARD", "class_name": "CostGuard" },
+      { "name": "TICKER", "class_name": "Ticker" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CostGuard", "Ticker"] }],
+  "triggers": { "crons": ["*/30 * * * *"] },
+  "vars": {
+    "CFGUARD_MAX_USD_5M": "2",
+    "CFGUARD_SYNC_MS": "5000"
+  }
+  // Set the admin token with: wrangler secret put CFGUARD_ADMIN_TOKEN
+}
