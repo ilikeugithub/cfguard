@@ -154,6 +154,7 @@ for i in $(seq 100); do curl -s -o /dev/null -w "%{http_code}\n" "localhost:8787
 - **DO 的 RPC 方法**按"每个对象每分钟"统一计算预算，不单独当作一次调用；`doRequests` 只统计 alarm 和 fetch。
 - **还没有计量** Workers AI、Vectorize、Queue 操作次数和 Worker CPU 时间。
 - `raw({ columnNames: true })` 在结果为 0 行时拿不到列名，会返回 `[[]]`。
+- `first()` / `raw()` 底层走 `all()` 实现：计费口径一致（D1 按扫描行数），但大结果集会把全量结果拉进 isolate 内存。取单行时建议在 SQL 里加 `LIMIT 1`。
 - **新 isolate 的第一个请求**会多等一次 DO 往返（超过 1 秒就直接放行）；其他 isolate 会在 `syncIntervalMs` 内感知到熔断。
 - **自身开销**：每个活跃 isolate 每 5 秒最多 1 次 DO 请求；CostGuard 每分钟最多写约 41 行 SQLite。
 
