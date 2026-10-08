@@ -100,7 +100,7 @@ handler 里的 `env.DB` 已经自动替换成受保护的版本，业务代码�
 | `alarmDeferSeconds` | `3600` | 熔断期间，DO alarm 推迟多久（设为 0 表示直接丢弃） |
 | `name` | `"global"` | 换一个名字，就是一份独立的预算 |
 | `telemetryUrl` / `telemetryToken` / `telemetrySecret` | 空（不上报） | 上报到 CFGuard SaaS：在控制台「实时」tab 拿地址、Token 和签名密钥，三个都要填 |
-| `workerName` | `"default"` | 在 SaaS 实时 tab 里显示的 Worker 名 |
+| `workerName` | `label`，没有就用 `name` | 在 SaaS 实时 tab 里显示的 Worker 名 |
 
 费用估算按 2026 年 10 月的超额单价计算，**不扣除免费额度**，所以结果偏保守。单价见 `PRICES_USD`。
 
@@ -150,19 +150,20 @@ for i in $(seq 100); do curl -s -o /dev/null -w "%{http_code}\n" "localhost:8787
 
 ## SaaS 联动（实时上报）
 
-SDK 自己就能秒级熔断，不需要 SaaS。但如果你想在控制台里**实时**看到每个 Worker 的用量（而不是等 SaaS 每分钟轮询），可以打开上报：
+SDK 自己就能秒级熔断，不需要 SaaS。打开上报后，控制台的「实时」tab 能看到各个窗口的花费和熔断状态，熔断/恢复时 SaaS 也会按你在控制台配置的渠道报警：
 
 ```ts
 costGuard(env.DB, {
   workerName: "api",
-  telemetryUrl: "https://your-app.workers.dev/api/telemetry", // 控制台「实时」tab
-  telemetryToken: "…",    // 同上
-  telemetrySecret: env.TELEMETRY_SECRET, // 同上，放 secret，不要写进代码
+  telemetryUrl: "https://…/api/telemetry",       // 控制台「实时」tab
+  telemetryToken: "…",                           // 同上
+  telemetrySecret: env.CFGUARD_TELEMETRY_SECRET, // 同上，放 secret，不要写进代码
 });
 ```
 
-- 每次同步后推一条 HMAC 签名的用量（窗口花费、指标、是否熔断），走 `waitUntil`，不拖慢请求，失败也不影响熔断。
-- SaaS 只保留 ~24 小时，分钟轮询仍然是熔断的依据。
+- 上报由 CostGuard 对象统一发出，不是每个 isolate 各发一条：数字有变化时最多 30 秒一条，没变化时 5 分钟一条心跳；熔断和恢复立即发送。
+- 内容只有各窗口的累计花费和熔断状态，用 HMAC 签名；走 `waitUntil`，不影响请求，失败也不影响熔断。
+- 签名密钥会随配置存在你自己账号里的 CostGuard 对象中。
 
 ## 已知限制
 

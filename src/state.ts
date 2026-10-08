@@ -13,8 +13,6 @@ export class IsolateState {
   lastSync = 0;
   firstSyncDone = false;
   inflight: Promise<void> | null = null;
-  /** Detached realtime SaaS ping chained off the last sync; never awaited by requests. */
-  telemetryInflight: Promise<unknown> | null = null;
 
   addHot(kind: HotEntry["kind"], key: string, delta: Partial<Metrics>, call: boolean): void {
     const id = `${kind}\u0000${key}`;

@@ -2,6 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import { sendAlerts, type AlertEvent } from "./alerts";
 import { addMetrics, estimateUsd, METRICS, nonZero, zeroMetrics, type Metric, type Metrics } from "./metrics";
 import { DEFAULT_WINDOWS } from "./options";
+import { pushTelemetry, TELEMETRY_HEARTBEAT_MS, TELEMETRY_MIN_INTERVAL_MS, tripOf, type TelemetryPing } from "./telemetry";
 import type {
   Breach,
   CostWindow,
@@ -74,6 +75,8 @@ export class CostGuard extends DurableObject {
   private warned = new Map<number, number>();
   private lastReport = 0;
   private alarmArmed = false;
+  private lastPing = 0;
+  private lastPingKey = "";
 
   constructor(ctx: DurableObjectState, env: unknown) {
     super(ctx, env as never);
@@ -101,6 +104,7 @@ export class CostGuard extends DurableObject {
     if (this.opened) await this.maybeAutoReset(now);
     if (!this.opened) await this.evaluate(now);
     await this.armAlarm(now);
+    this.ping(now);
     return { tripped: this.opened ? summary(this.opened) : null };
   }
 
@@ -139,6 +143,7 @@ export class CostGuard extends DurableObject {
     this.roll(now);
     this.prune();
     await this.maybeAutoReset(now);
+    this.ping(now);
     // Keep ticking only while there is traffic; the next report re-arms otherwise.
     if (now - this.lastReport < 3 * MINUTE) await this.armAlarm(now);
   }
@@ -286,6 +291,7 @@ export class CostGuard extends DurableObject {
     this.opened = { ...s, usage: usage ? nonZero(usage) : undefined, top: this.top(topMinutes) };
     await this.ctx.storage.put("trip", this.opened);
     this.notify({ kind: "tripped", trip: this.opened });
+    this.ping(s.at, true);
   }
 
   private async maybeAutoReset(now: number): Promise<void> {
@@ -310,7 +316,10 @@ export class CostGuard extends DurableObject {
     await this.ctx.storage.delete("trip");
     await this.ctx.storage.put("since", this.since);
     this.recomputePast();
-    if (wasOpen) this.notify({ kind: "reset", auto });
+    if (wasOpen) {
+      this.notify({ kind: "reset", auto });
+      this.ping(Date.now(), true);
+    }
   }
 
   private prune(): void {
@@ -323,6 +332,28 @@ export class CostGuard extends DurableObject {
     if (this.alarmArmed) return;
     this.alarmArmed = true;
     await this.ctx.storage.setAlarm((Math.floor(now / MINUTE) + 1) * MINUTE + 1_000);
+  }
+
+  /**
+   * Realtime ping to the CFGuard SaaS, if configured: at most every TELEMETRY_MIN_INTERVAL_MS and only
+   * when the numbers changed (plus a heartbeat), or at once (`force`) on a trip or reset.
+   */
+  private ping(now: number, force = false): void {
+    const t = this.config.telemetry;
+    if (!t) return;
+    if (!force && now - this.lastPing < TELEMETRY_MIN_INTERVAL_MS) return;
+    const windows = this.config.windows.map((w) => ({
+      minutes: w.minutes,
+      usd: Math.round(estimateUsd(this.windowUsage(w.minutes)) * 1e6) / 1e6,
+      ...(w.maxUsd === undefined ? {} : { maxUsd: w.maxUsd }),
+    }));
+    const tripped = tripOf(this.opened);
+    const key = JSON.stringify([windows, tripped?.at ?? null]);
+    if (!force && key === this.lastPingKey && now - this.lastPing < TELEMETRY_HEARTBEAT_MS) return;
+    this.lastPing = now;
+    this.lastPingKey = key;
+    const ping: TelemetryPing = { v: 2, worker: t.worker, ts: now, windows, tripped };
+    this.ctx.waitUntil(pushTelemetry(t, ping).catch((e) => console.warn("[cfguard] telemetry ping failed:", e)));
   }
 
   private notify(event: AlertEvent): void {

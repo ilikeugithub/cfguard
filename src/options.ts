@@ -28,15 +28,15 @@ export interface CostGuardOptions {
   /** Give up waiting on the CostGuard object after this long and fail open. Default 500 ms. */
   syncTimeoutMs?: number;
   /**
-   * Push near-realtime usage pings to the CFGuard SaaS after each sync, so the
-   * dashboard's Realtime tab shows second-level visibility. Get the URL, token and
-   * secret from the dashboard. Pings are HMAC-signed and best-effort: they never
-   * slow down requests or change fail-open behavior. All three must be set.
+   * Send realtime usage to the CFGuard SaaS dashboard. Get the URL, token and secret from the
+   * dashboard's Realtime tab; all three must be set. The CostGuard object (not each isolate) sends a
+   * signed ping at most every 30 s while numbers change, and at once on a trip or reset. Best effort:
+   * it never touches request handling or fail-open behavior.
    */
   telemetryUrl?: string;
   telemetryToken?: string;
   telemetrySecret?: string;
-  /** Worker name shown in the SaaS Realtime tab. Default "default". */
+  /** Worker name shown in the SaaS Realtime tab. Default: `label`, then `name`. */
   workerName?: string;
   /** Admin endpoints (status / reset / trip). Default `"/__cfguard"`; `false` disables. */
   adminPath?: string | false;
@@ -145,5 +145,15 @@ export function guardConfigOf(o: ResolvedOptions): GuardConfig {
     locale: o.locale,
     label: o.label,
     adminPath: o.adminPath,
+    ...(o.telemetryUrl && o.telemetryToken && o.telemetrySecret
+      ? {
+          telemetry: {
+            url: o.telemetryUrl,
+            token: o.telemetryToken,
+            secret: o.telemetrySecret,
+            worker: o.workerName ?? o.label ?? o.name,
+          },
+        }
+      : {}),
   };
 }

@@ -1,49 +1,77 @@
-import { createHmac } from "node:crypto";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { zeroMetrics } from "../src/metrics";
-import { pushTelemetry, telemetryEnabled } from "../src/telemetry";
+import { guardConfigOf, resolveOptions } from "../src/options";
+import { hmacHex, type TelemetryPing } from "../src/telemetry";
+import type { GuardConfig } from "../src/types";
+import { sleep, testEnv } from "./helpers";
 
-const base = {
-  bindings: {}, guardBinding: "CFGUARD", name: "global",
-  perInvocation: {}, syncIntervalMs: 5000, staleAfterMs: 30000, syncTimeoutMs: 500,
-  adminTokenBinding: "CFGUARD_ADMIN_TOKEN", queueRetryDelaySeconds: 3600, alarmDeferSeconds: 3600,
-  urgentUsd: 1, windows: [],
-} as any;
+const TELEMETRY = { url: "https://saas.example/api/telemetry", token: "tok123", secret: "s3cret", worker: "api" };
+const CONFIG: GuardConfig = {
+  windows: [{ minutes: 5, maxUsd: 100 }],
+  warnAt: false,
+  alerts: [],
+  locale: "en",
+  adminPath: false,
+  telemetry: TELEMETRY,
+};
+
+function captureFetch() {
+  const seen: { url: string; headers: Record<string, string>; body: string }[] = [];
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+    seen.push({ url, headers: init.headers as Record<string, string>, body: init.body as string });
+    return new Response("{}");
+  });
+  return seen;
+}
 
 describe("telemetry", () => {
-  it("disabled unless all three are set", () => {
-    expect(telemetryEnabled({ ...base })).toBe(false);
-    expect(telemetryEnabled({ ...base, telemetryUrl: "https://x", telemetryToken: "t" })).toBe(false);
-    expect(telemetryEnabled({ ...base, telemetryUrl: "https://x", telemetryToken: "t", telemetrySecret: "s" })).toBe(true);
-  });
+  afterEach(() => vi.unstubAllGlobals());
 
-  it("sends HMAC-signed ping matching node:crypto", async () => {
-    const secret = "test-secret-123";
-    const o = { ...base, telemetryUrl: "https://saas.example/api/telemetry", telemetryToken: "tok123", telemetrySecret: secret, workerName: "api" };
-    const seen: { url: string; init: any }[] = [];
-    vi.stubGlobal("fetch", async (url: string, init: any) => {
-      seen.push({ url, init });
-      return { ok: true } as Response;
+  it("is configured only when url, token and secret are all set", () => {
+    const opts = (extra: object) => guardConfigOf(resolveOptions({ bindings: {}, label: "shop", ...extra }, {}));
+    expect(opts({ telemetryUrl: "https://x", telemetryToken: "t" }).telemetry).toBeUndefined();
+    expect(opts({ telemetryUrl: "https://x", telemetryToken: "t", telemetrySecret: "s" }).telemetry).toEqual({
+      url: "https://x",
+      token: "t",
+      secret: "s",
+      worker: "shop",
     });
-    await pushTelemetry(o, { ...zeroMetrics(), d1RowsRead: 100 }, false, 5000);
-    vi.unstubAllGlobals();
-    expect(seen).toHaveLength(1);
-    const { init } = seen[0]!;
-    expect(init.headers["x-cfguard-telemetry-token"]).toBe("tok123");
-    const body = JSON.parse(init.body);
-    expect(body.v).toBe(1);
-    expect(body.worker).toBe("api");
-    expect(body.metrics.d1RowsRead).toBe(100);
-    // independent HMAC check with node:crypto
-    const expected = createHmac("sha256", secret).update(init.body).digest("hex");
-    expect(init.headers["x-cfguard-signature"]).toBe(expected);
   });
 
-  it("throws on non-ok so failures are visible in logs", async () => {
-    const o = { ...base, telemetryUrl: "https://x", telemetryToken: "t", telemetrySecret: "s" };
-    vi.stubGlobal("fetch", async () => ({ ok: false, status: 500 }) as Response);
-    await expect(pushTelemetry(o, zeroMetrics(), false, 5000)).rejects.toThrow("500");
-    vi.unstubAllGlobals();
+  it("signs with HMAC-SHA256 (RFC 4231 test case 2)", async () => {
+    expect(await hmacHex("Jefe", "what do ya want for nothing?")).toBe(
+      "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843",
+    );
+  });
+
+  it("the CostGuard object pings at most every 30 s, and at once on trip and reset", async () => {
+    const seen = captureFetch();
+    const stub = testEnv.CFGUARD.get(testEnv.CFGUARD.idFromName("telemetry-test"));
+    const report = (rows: number) =>
+      stub.report({ metrics: { ...zeroMetrics(), d1RowsWritten: rows }, hot: [], config: CONFIG });
+
+    for (let i = 0; i < 5; i++) await report(1_000);
+    await sleep(100);
+    expect(seen).toHaveLength(1);
+
+    const first = seen[0]!;
+    expect(first.url).toBe(TELEMETRY.url);
+    expect(first.headers["x-cfguard-telemetry-token"]).toBe("tok123");
+    expect(first.headers["x-cfguard-signature"]).toBe(await hmacHex("s3cret", first.body));
+    const ping = JSON.parse(first.body) as TelemetryPing;
+    expect(ping).toMatchObject({ v: 2, worker: "api", tripped: null });
+    expect(ping.windows[0]).toMatchObject({ minutes: 5, maxUsd: 100 });
+    expect(ping.windows[0]!.usd).toBeCloseTo(0.001, 6);
+
+    await stub.trip("test");
+    await sleep(100);
+    expect(seen).toHaveLength(2);
+    expect((JSON.parse(seen[1]!.body) as TelemetryPing).tripped).toMatchObject({ manual: true, reason: "test" });
+
+    await stub.reset({ clearUsage: true });
+    await sleep(100);
+    expect(seen).toHaveLength(3);
+    expect((JSON.parse(seen[2]!.body) as TelemetryPing).tripped).toBeNull();
   });
 });

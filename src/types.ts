@@ -60,6 +60,15 @@ export interface GuardConfig {
   locale: Locale;
   label?: string;
   adminPath: string | false;
+  telemetry?: TelemetryConfig;
+}
+
+/** Where the CostGuard object sends its realtime pings (CFGuard SaaS). */
+export interface TelemetryConfig {
+  url: string;
+  token: string;
+  secret: string;
+  worker: string;
 }
 
 export interface ReportPayload {

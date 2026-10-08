@@ -1,9 +1,22 @@
-import { estimateUsd, type Metrics } from "./metrics";
-import type { ResolvedOptions } from "./options";
+import type { TelemetryConfig, TripRecord } from "./types";
 
 const enc = new TextEncoder();
 
-async function hmacHex(secret: string, body: string): Promise<string> {
+/** Normal pings go out at most this often; trips and resets go out at once. */
+export const TELEMETRY_MIN_INTERVAL_MS = 30_000;
+/** Unchanged numbers are re-sent this often so the dashboard can tell the guard is alive. */
+export const TELEMETRY_HEARTBEAT_MS = 5 * 60_000;
+
+export interface TelemetryPing {
+  v: 2;
+  worker: string;
+  ts: number;
+  /** Account-wide totals of each configured window, as the breaker sees them. */
+  windows: { minutes: number; usd: number; maxUsd?: number }[];
+  tripped: { at: number; manual: boolean; reason?: string; usd: number; metric?: string; minutes?: number } | null;
+}
+
+export async function hmacHex(secret: string, body: string): Promise<string> {
   const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [
     "sign",
   ]);
@@ -11,43 +24,27 @@ async function hmacHex(secret: string, body: string): Promise<string> {
   return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-export function telemetryEnabled(o: ResolvedOptions): boolean {
-  return !!(o.telemetryUrl && o.telemetryToken && o.telemetrySecret);
+export function tripOf(t: TripRecord | null): TelemetryPing["tripped"] {
+  if (!t) return null;
+  return { at: t.at, manual: t.manual, reason: t.reason, usd: t.usd, metric: t.breach?.metric, minutes: t.breach?.minutes };
 }
 
 /**
- * Best-effort realtime ping to the CFGuard SaaS (see cfguard-app docs/sdk-linkage.md).
- * Never throws; the SaaS verifies the HMAC and keeps ~24h of pings for the dashboard.
+ * Sends one signed ping to the CFGuard SaaS (see cfguard-app docs/sdk-linkage.md).
+ * Called only by the CostGuard object, so a Worker sends at most one ping per
+ * TELEMETRY_MIN_INTERVAL_MS however many isolates it runs.
  */
-export async function pushTelemetry(
-  o: ResolvedOptions,
-  totals: Metrics,
-  tripped: boolean,
-  windowMs: number,
-): Promise<void> {
-  if (!telemetryEnabled(o)) return;
-  const metrics: Record<string, number> = {};
-  for (const [k, v] of Object.entries(totals)) {
-    if (typeof v === "number" && v > 0) metrics[k] = v;
-  }
-  const body = JSON.stringify({
-    v: 1,
-    worker: o.workerName ?? "default",
-    ts: Date.now(),
-    windowMs,
-    usd: estimateUsd(totals),
-    metrics,
-    tripped,
-  });
-  const res = await fetch(o.telemetryUrl!, {
+export async function pushTelemetry(t: TelemetryConfig, ping: TelemetryPing): Promise<void> {
+  const body = JSON.stringify(ping);
+  const res = await fetch(t.url, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-cfguard-telemetry-token": o.telemetryToken!,
-      "x-cfguard-signature": await hmacHex(o.telemetrySecret!, body),
+      "x-cfguard-telemetry-token": t.token,
+      "x-cfguard-signature": await hmacHex(t.secret, body),
     },
     body,
-    signal: AbortSignal.timeout(3000),
+    signal: AbortSignal.timeout(5_000),
   });
   if (!res.ok) throw new Error(`telemetry ping failed: ${res.status}`);
 }
