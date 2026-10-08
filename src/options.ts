@@ -25,7 +25,7 @@ export interface CostGuardOptions {
   syncIntervalMs?: number;
   /** An isolate that has not synced for this long syncs before handling the next event. Default 30000 ms. */
   staleAfterMs?: number;
-  /** Give up waiting on the CostGuard object after this long and fail open. Default 1000 ms. */
+  /** Give up waiting on the CostGuard object after this long and fail open. Default 500 ms. */
   syncTimeoutMs?: number;
   /** Admin endpoints (status / reset / trip). Default `"/__cfguard"`; `false` disables. */
   adminPath?: string | false;
@@ -108,7 +108,7 @@ function resolve(o: CostGuardOptions): ResolvedOptions {
     adminPath: o.adminPath === undefined ? "/__cfguard" : o.adminPath,
     syncIntervalMs: o.syncIntervalMs ?? 5_000,
     staleAfterMs: o.staleAfterMs ?? 30_000,
-    syncTimeoutMs: o.syncTimeoutMs ?? 1_000,
+    syncTimeoutMs: o.syncTimeoutMs ?? 500,
     adminTokenBinding: o.adminTokenBinding ?? "CFGUARD_ADMIN_TOKEN",
     queueRetryDelaySeconds: Math.min(o.queueRetryDelaySeconds ?? 3_600, 43_200),
     alarmDeferSeconds: o.alarmDeferSeconds ?? 3_600,
