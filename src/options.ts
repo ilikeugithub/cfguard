@@ -27,6 +27,17 @@ export interface CostGuardOptions {
   staleAfterMs?: number;
   /** Give up waiting on the CostGuard object after this long and fail open. Default 500 ms. */
   syncTimeoutMs?: number;
+  /**
+   * Push near-realtime usage pings to the CFGuard SaaS after each sync, so the
+   * dashboard's Realtime tab shows second-level visibility. Get the URL, token and
+   * secret from the dashboard. Pings are HMAC-signed and best-effort: they never
+   * slow down requests or change fail-open behavior. All three must be set.
+   */
+  telemetryUrl?: string;
+  telemetryToken?: string;
+  telemetrySecret?: string;
+  /** Worker name shown in the SaaS Realtime tab. Default "default". */
+  workerName?: string;
   /** Admin endpoints (status / reset / trip). Default `"/__cfguard"`; `false` disables. */
   adminPath?: string | false;
   /** Secret holding the admin bearer token. Admin endpoints answer 404 when it is unset. Default `"CFGUARD_ADMIN_TOKEN"`. */
@@ -113,6 +124,10 @@ function resolve(o: CostGuardOptions): ResolvedOptions {
     queueRetryDelaySeconds: Math.min(o.queueRetryDelaySeconds ?? 3_600, 43_200),
     alarmDeferSeconds: o.alarmDeferSeconds ?? 3_600,
     onTripped: o.onTripped,
+    telemetryUrl: o.telemetryUrl,
+    telemetryToken: o.telemetryToken,
+    telemetrySecret: o.telemetrySecret,
+    workerName: o.workerName,
     urgentUsd: caps.length ? Math.min(...caps) * 0.1 : Infinity,
   };
 }
