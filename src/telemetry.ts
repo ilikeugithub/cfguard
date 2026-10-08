@@ -30,7 +30,7 @@ export function tripOf(t: TripRecord | null): TelemetryPing["tripped"] {
 }
 
 /**
- * Sends one signed ping to the CFGuard SaaS (see cfguard-app docs/sdk-linkage.md).
+ * Sends one signed ping to the CFGuard SaaS dashboard (https://cfguard-app.cfguard.workers.dev).
  * Called only by the CostGuard object, so a Worker sends at most one ping per
  * TELEMETRY_MIN_INTERVAL_MS however many isolates it runs.
  */

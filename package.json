@@ -4,6 +4,14 @@
   "description": "Real-time cost circuit breaker for Cloudflare Workers: meters D1/KV/R2/Durable Objects usage in-process and stops runaway bills within seconds.",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ilikeugithub/cfguard.git"
+  },
+  "homepage": "https://github.com/ilikeugithub/cfguard#readme",
+  "bugs": {
+    "url": "https://github.com/ilikeugithub/cfguard/issues"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
