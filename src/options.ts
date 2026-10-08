@@ -82,6 +82,10 @@ export interface ResolvedOptions extends GuardConfig {
   onTripped?: CostGuardOptions["onTripped"];
   /** Pending spend that triggers an immediate report instead of waiting for the interval. */
   urgentUsd: number;
+  telemetryUrl?: string;
+  telemetryToken?: string;
+  telemetrySecret?: string;
+  workerName?: string;
 }
 
 const byInput = new WeakMap<object, ResolvedOptions>();
