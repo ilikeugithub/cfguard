@@ -2,6 +2,7 @@ import type { CostGuard } from "./guard-do";
 import { addMetrics, estimateUsd, isZero, zeroMetrics } from "./metrics";
 import { guardConfigOf, type ResolvedOptions } from "./options";
 import type { IsolateState } from "./state";
+import { pushTelemetry, telemetryEnabled } from "./telemetry";
 
 let warnedMissingBinding = false;
 
@@ -55,6 +56,15 @@ export function sync(env: unknown, o: ResolvedOptions, state: IsolateState): Pro
       state.inflight = null;
     }
   })();
+  if (telemetryEnabled(o)) {
+    // Detached on purpose: the realtime SaaS ping must never slow down request
+    // handling. afterInvocation() feeds it to waitUntil so it gets a chance to land.
+    state.telemetryInflight = state.inflight
+      .then(() => pushTelemetry(o, metrics, state.tripped !== null, o.syncIntervalMs))
+      .catch(() => {});
+  } else {
+    state.telemetryInflight = null;
+  }
   return state.inflight;
 }
 
@@ -77,5 +87,8 @@ export function afterInvocation(
   state: IsolateState,
   waitUntil: (p: Promise<unknown>) => void,
 ): void {
-  if (syncDue(o, state)) waitUntil(sync(env, o, state));
+  if (syncDue(o, state)) {
+    waitUntil(sync(env, o, state));
+    if (state.telemetryInflight) waitUntil(state.telemetryInflight);
+  }
 }
