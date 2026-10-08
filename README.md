@@ -99,6 +99,8 @@ handler 里的 `env.DB` 已经自动替换成受保护的版本，业务代码�
 | `queueRetryDelaySeconds` | `3600` | 熔断期间，queue 消息延后多久再重试（消息不会丢） |
 | `alarmDeferSeconds` | `3600` | 熔断期间，DO alarm 推迟多久（设为 0 表示直接丢弃） |
 | `name` | `"global"` | 换一个名字，就是一份独立的预算 |
+| `telemetryUrl` / `telemetryToken` / `telemetrySecret` | 空（不上报） | 上报到 CFGuard SaaS：在控制台「实时」tab 拿地址、Token 和签名密钥，三个都要填 |
+| `workerName` | `"default"` | 在 SaaS 实时 tab 里显示的 Worker 名 |
 
 费用估算按 2026 年 10 月的超额单价计算，**不扣除免费额度**，所以结果偏保守。单价见 `PRICES_USD`。
 
@@ -145,6 +147,22 @@ curl -X POST localhost:8787/setup && curl -X POST "localhost:8787/seed?n=20000"
 ```bash
 for i in $(seq 100); do curl -s -o /dev/null -w "%{http_code}\n" "localhost:8787/search?author=author-7"; done
 ```
+
+## SaaS 联动（实时上报）
+
+SDK 自己就能秒级熔断，不需要 SaaS。但如果你想在控制台里**实时**看到每个 Worker 的用量（而不是等 SaaS 每分钟轮询），可以打开上报：
+
+```ts
+costGuard(env.DB, {
+  workerName: "api",
+  telemetryUrl: "https://your-app.workers.dev/api/telemetry", // 控制台「实时」tab
+  telemetryToken: "…",    // 同上
+  telemetrySecret: env.TELEMETRY_SECRET, // 同上，放 secret，不要写进代码
+});
+```
+
+- 每次同步后推一条 HMAC 签名的用量（窗口花费、指标、是否熔断），走 `waitUntil`，不拖慢请求，失败也不影响熔断。
+- SaaS 只保留 ~24 小时，分钟轮询仍然是熔断的依据。
 
 ## 已知限制
 
