@@ -152,8 +152,11 @@ for i in $(seq 100); do curl -s -o /dev/null -w "%{http_code}\n" "localhost:8787
 
 SDK 自己就能秒级熔断，不需要 SaaS。打开上报后，控制台的「实时」tab 能看到各个窗口的花费和熔断状态，熔断/恢复时 SaaS 也会按你在控制台配置的渠道报警：
 
+在传给 `withGuard` 的配置里加上这几项即可：
+
 ```ts
-costGuard(env.DB, {
+const guard = (env: Env): CostGuardOptions => ({
+  bindings: { DB: "d1" },
   workerName: "api",
   telemetryUrl: "https://…/api/telemetry",       // 控制台「实时」tab
   telemetryToken: "…",                           // 同上
@@ -180,3 +183,7 @@ costGuard(env.DB, {
 ## License
 
 MIT
+
+cfguard 是独立项目，与 Cloudflare, Inc. 无关联。Cloudflare 是 Cloudflare, Inc. 的商标。
+
+*cfguard is an independent project and is not affiliated with or endorsed by Cloudflare, Inc.*

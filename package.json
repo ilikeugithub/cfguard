@@ -39,7 +39,8 @@
     "build": "tsup",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "dev:example": "wrangler dev -c example/wrangler.jsonc"
+    "dev:example": "wrangler dev -c example/wrangler.jsonc",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.3.7",
